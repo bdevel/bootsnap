@@ -20,6 +20,8 @@ module Bootsnap
         raw_fingerprint = self.class.load_path_fingerprint(path_obj)
         cached = store.load_index(raw_fingerprint)
 
+        @last_fingerprint = raw_fingerprint
+
         if cached && cached["resolved_paths"]
           # Index hit — restore resolved paths and index without any syscalls
           resolved = cached["resolved_paths"]
@@ -82,7 +84,15 @@ module Bootsnap
       # Try to resolve this feature to an absolute path without traversing the
       # loadpath.
       def find(feature)
-        reinitialize if (@has_relative_paths && dir_changed?) || stale?
+        if @has_relative_paths && dir_changed?
+          reinitialize
+        elsif stale?
+          if load_path_changed?
+            reinitialize
+          else
+            @generated_at = now
+          end
+        end
         if @index_dirty
           @index_dirty = false
           save_index_locked
@@ -184,6 +194,16 @@ module Bootsnap
           "index" => @index,
           "resolved_paths" => @path_obj.to_a,
         })
+      end
+
+      def load_path_changed?
+        current = self.class.load_path_fingerprint(@path_obj)
+        if current == @last_fingerprint
+          false
+        else
+          @last_fingerprint = current
+          true
+        end
       end
 
       def dir_changed?
